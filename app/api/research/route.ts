@@ -52,31 +52,27 @@ export async function POST(req: Request) {
             }
           }
 
-          // Build conversation history including tool results
-          const messages = [
-            {
-              role: 'user' as const,
-              content: `Research the following topic thoroughly: ${query}`,
-            },
-          ];
-
-          // Add all messages from the tool result
-          if (toolResult.response?.messages) {
-            for (const msg of toolResult.response.messages) {
-              messages.push(msg as any);
+          // Build a summary of research findings for synthesis
+          let researchSummary = 'Here are the research findings:\n\n';
+          if (toolResult.toolResults) {
+            for (const tr of toolResult.toolResults) {
+              if (tr.toolName === 'webSearchTool' && tr.result?.results) {
+                for (const result of tr.result.results) {
+                  researchSummary += `**${result.title}** (${result.url})\n${result.content}\n\n`;
+                }
+              }
             }
           }
 
-          // Now ask for a synthesis
-          messages.push({
-            role: 'user' as const,
-            content: 'Based on the research you just conducted, please provide a comprehensive answer to my question. Write a clear, well-organized response that synthesizes all the information you found.',
-          });
+          console.log('Generating synthesis...');
 
-          console.log('Generating synthesis with', messages.length, 'messages');
-
-          // Second call - get text synthesis
-          const finalResult = await agent.generate(messages, {
+          // Second call - get text synthesis with fresh context
+          const finalResult = await agent.generate([
+            {
+              role: 'user',
+              content: `${researchSummary}\n\nBased on the research findings above, please provide a comprehensive answer to my original question: "${query}"\n\nProvide a clear, well-organized response that synthesizes the information.`,
+            }
+          ], {
             maxSteps: 1, // No more tool calls, just text
           });
 
