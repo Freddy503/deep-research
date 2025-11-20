@@ -21,8 +21,8 @@ export async function POST(req: Request) {
         try {
           console.log('Starting research for query:', query);
 
-          // Use generate instead of stream for better control
-          const result = await agent.generate(
+          // First call - let agent use tools to gather information
+          const toolResult = await agent.generate(
             [
               {
                 role: 'user',
@@ -30,50 +30,18 @@ export async function POST(req: Request) {
               },
             ],
             {
-              // Enable streaming via onStepFinish callback
-              onStepFinish: async (step: any) => {
-                console.log('Step finished:', step);
-                // Stream any intermediate text
-                if (step.text) {
-                  controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify({ type: 'text', content: step.text })}\n\n`)
-                  );
-                }
-              },
+              maxSteps: 10, // Allow multiple tool calls
             }
           );
 
-          console.log('Research completed. Result keys:', Object.keys(result));
-          console.log('Result text length:', result.text?.length || 0);
-          console.log('First 200 chars of text:', result.text?.substring(0, 200));
+          console.log('Tool gathering completed. Messages:', toolResult.response?.messages?.length);
 
-          // Stream the final text result
-          if (result.text) {
-            // Split into words for token-by-token effect
-            const words = result.text.split(/(\s+)/); // Keep whitespace
-            for (const word of words) {
-              if (word.length > 0) {
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'text', content: word })}\n\n`)
-                );
-                // Small delay to simulate streaming
-                await new Promise(resolve => setTimeout(resolve, 20));
-              }
-            }
-          } else {
-            console.log('No result.text found. Full result:', JSON.stringify(result, null, 2));
-            // Send error message
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'text', content: 'Research completed but no text response was generated.' })}\n\n`)
-            );
-          }
-
-          // Extract sources from tool calls
+          // Extract sources from tool results
           const sources: any[] = [];
-          if (result.toolResults) {
-            for (const toolResult of result.toolResults) {
-              if (toolResult.toolName === 'webSearchTool' && toolResult.result?.results) {
-                for (const webResult of toolResult.result.results) {
+          if (toolResult.toolResults) {
+            for (const toolResult_ of toolResult.toolResults) {
+              if (toolResult_.toolName === 'webSearchTool' && toolResult_.result?.results) {
+                for (const webResult of toolResult_.result.results) {
                   sources.push({
                     title: webResult.title,
                     url: webResult.url,
@@ -82,6 +50,55 @@ export async function POST(req: Request) {
                 }
               }
             }
+          }
+
+          // Build conversation history including tool results
+          const messages = [
+            {
+              role: 'user' as const,
+              content: `Research the following topic thoroughly: ${query}`,
+            },
+          ];
+
+          // Add all messages from the tool result
+          if (toolResult.response?.messages) {
+            for (const msg of toolResult.response.messages) {
+              messages.push(msg as any);
+            }
+          }
+
+          // Now ask for a synthesis
+          messages.push({
+            role: 'user' as const,
+            content: 'Based on the research you just conducted, please provide a comprehensive answer to my question. Write a clear, well-organized response that synthesizes all the information you found.',
+          });
+
+          console.log('Generating synthesis with', messages.length, 'messages');
+
+          // Second call - get text synthesis
+          const finalResult = await agent.generate(messages, {
+            maxSteps: 1, // No more tool calls, just text
+          });
+
+          console.log('Synthesis completed. Text length:', finalResult.text?.length || 0);
+          console.log('First 200 chars:', finalResult.text?.substring(0, 200));
+
+          // Stream the final text result
+          if (finalResult.text) {
+            const words = finalResult.text.split(/(\s+)/);
+            for (const word of words) {
+              if (word.length > 0) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: 'text', content: word })}\n\n`)
+                );
+                await new Promise(resolve => setTimeout(resolve, 20));
+              }
+            }
+          } else {
+            console.error('No text in final result');
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'text', content: 'I was unable to generate a response. Please try again.' })}\n\n`)
+            );
           }
 
           // Send sources at the end
