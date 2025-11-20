@@ -16,7 +16,8 @@ export function getMastra() {
 
 export function getResearchAgent() {
   const mastraInstance = getMastra();
-  const agent = mastraInstance.getAgent('research-agent');
+  // Use the key name from the agents config, not the agent ID
+  const agent = mastraInstance.getAgent('researchAgent');
 
   if (!agent) {
     throw new Error('Research agent not found in Mastra instance');
