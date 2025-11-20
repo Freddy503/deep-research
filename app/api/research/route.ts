@@ -19,6 +19,8 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          console.log('Starting research for query:', query);
+
           // Use generate instead of stream for better control
           const result = await agent.generate(
             [
@@ -41,17 +43,29 @@ export async function POST(req: Request) {
             }
           );
 
+          console.log('Research completed. Result keys:', Object.keys(result));
+          console.log('Result text length:', result.text?.length || 0);
+          console.log('First 200 chars of text:', result.text?.substring(0, 200));
+
           // Stream the final text result
           if (result.text) {
             // Split into words for token-by-token effect
-            const words = result.text.split(' ');
+            const words = result.text.split(/(\s+)/); // Keep whitespace
             for (const word of words) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: 'text', content: word + ' ' })}\n\n`)
-              );
-              // Small delay to simulate streaming
-              await new Promise(resolve => setTimeout(resolve, 10));
+              if (word.length > 0) {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: 'text', content: word })}\n\n`)
+                );
+                // Small delay to simulate streaming
+                await new Promise(resolve => setTimeout(resolve, 20));
+              }
             }
+          } else {
+            console.log('No result.text found. Full result:', JSON.stringify(result, null, 2));
+            // Send error message
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'text', content: 'Research completed but no text response was generated.' })}\n\n`)
+            );
           }
 
           // Extract sources from tool calls
