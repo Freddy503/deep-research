@@ -4,4 +4,4 @@ const nextConfig = {
   transpilePackages: ['@mastra/core', '@mastra/memory', '@mastra/loggers', '@mastra/libsql'],
 }
 
-module.exports = nextConfig
+export default nextConfig
