@@ -19,37 +19,52 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Generate research with streaming
-          const result = await agent.stream([
+          // Use generate instead of stream for better control
+          const result = await agent.generate(
+            [
+              {
+                role: 'user',
+                content: `Research the following topic thoroughly: ${query}`,
+              },
+            ],
             {
-              role: 'user',
-              content: `Research the following topic thoroughly: ${query}`,
-            },
-          ]);
+              // Enable streaming via onStepFinish callback
+              onStepFinish: async (step: any) => {
+                console.log('Step finished:', step);
+                // Stream any intermediate text
+                if (step.text) {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ type: 'text', content: step.text })}\n\n`)
+                  );
+                }
+              },
+            }
+          );
 
-          // Stream the text response
-          for await (const chunk of result.textStream) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', content: chunk })}\n\n`));
+          // Stream the final text result
+          if (result.text) {
+            // Split into words for token-by-token effect
+            const words = result.text.split(' ');
+            for (const word of words) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ type: 'text', content: word + ' ' })}\n\n`)
+              );
+              // Small delay to simulate streaming
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
           }
 
-          // Get the full result with tool calls
-          const fullResult = await result.object;
-
-          // Extract sources from tool calls if available
+          // Extract sources from tool calls
           const sources: any[] = [];
-          if (fullResult.steps) {
-            for (const step of fullResult.steps) {
-              if (step.toolCalls) {
-                for (const toolCall of step.toolCalls) {
-                  if (toolCall.toolName === 'web-search' && toolCall.result?.results) {
-                    for (const webResult of toolCall.result.results) {
-                      sources.push({
-                        title: webResult.title,
-                        url: webResult.url,
-                        snippet: webResult.content?.substring(0, 200),
-                      });
-                    }
-                  }
+          if (result.toolResults) {
+            for (const toolResult of result.toolResults) {
+              if (toolResult.toolName === 'webSearchTool' && toolResult.result?.results) {
+                for (const webResult of toolResult.result.results) {
+                  sources.push({
+                    title: webResult.title,
+                    url: webResult.url,
+                    snippet: webResult.content?.substring(0, 200),
+                  });
                 }
               }
             }
