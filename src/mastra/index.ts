@@ -11,7 +11,7 @@ import { generateReportWorkflow } from './workflows/generateReportWorkflow';
 export const mastra = new Mastra({
   storage: new LibSQLStore({
     id: 'mastra-storage',
-    url: 'file:../mastra.db',
+    url: process.env.DATABASE_URL || 'file:./mastra.db',
   }),
   agents: {
     researchAgent,
@@ -23,7 +23,7 @@ export const mastra = new Mastra({
   workflows: { generateReportWorkflow, researchWorkflow },
   observability: {
     default: {
-      enabled: true,
+      enabled: false,  // Disable telemetry to avoid warnings
     },
   },
 });

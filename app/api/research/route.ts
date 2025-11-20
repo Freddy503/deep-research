@@ -1,4 +1,4 @@
-import { mastra } from '@/src/mastra';
+import { getResearchAgent } from '@/lib/mastra-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,11 +12,7 @@ export async function POST(req: Request) {
       return new Response('Query is required', { status: 400 });
     }
 
-    const agent = mastra.getAgent('research-agent');
-
-    if (!agent) {
-      return new Response('Research agent not found', { status: 500 });
-    }
+    const agent = getResearchAgent();
 
     // Create a readable stream
     const encoder = new TextEncoder();
